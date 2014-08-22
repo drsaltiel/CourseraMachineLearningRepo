@@ -1,0 +1,46 @@
+---
+title: "Practical Machine Learning"
+output: html_document
+---
+This document describes the creation of a machine learning algorithim to predict the manner in which exercise is performed, the cross validation of the results, the expected sample error, and the motivation for all choices made.  We use the Human Activity Recognition (HAR) data accessable at http://groupware.les.inf.puc-rio.br/har [^1].
+
+First we download the training data if it is not already present in the working directory and split it into training (60%) and testing (40%) sets:
+```{r message=FALSE}
+library(caret); library(psych); library(randomForest)
+if (!file.exists("train.csv")){
+    fileURL<-'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+    download.file(fileURL, destfile = "./train.csv", method = "curl")
+}
+train<-read.csv('train.csv', na.strings = c("NA", NULL, '#DIV/0!'))
+set.seed(0)
+inTrain = createDataPartition(train$class, p = 0.6)[[1]]
+trainingPreprocess = train[ inTrain,]
+testing = train[-inTrain,]
+```
+Next we will remove extranious data columns to decrease complexity, including the sparse data columns which I believe have little predictive power (and would be easily swayed by a small amount of noise).  First we will remove those columns which are not numeric and those which are sparesly populated (we'll say <10% of observations have values - examining at these values it is clear variables either have all observations or only ~1% of them), then we drop the timestamps and column index:
+```{r}
+numericCols<-sapply(trainingPreprocess, is.numeric)
+training<-trainingPreprocess[numericCols] #drop non-numeric cols
+described<-describe(training)
+training<-training[described$n>0.1*length(training[,1])] #drop mostly empty cols
+training<- training[4:length(training)] #drop col index and timestamps
+```
+We now re-attach the 'classe' column of the results we are trying to predict, and the train our algorithim (I decided to use a randomForest).  This is followed by a confusion matrix where the rows are the number of predictions made for each classe and the columns are the number of observations which are actually in each class.  The sum of all the numbers not on the diagnol of this matrix are the points which were incorrectly predicted, and the in-sample error rate is the number of incorrectly predicted samples divided by the total samples times 100.
+```{r cache=TRUE}
+classe<-trainingPreprocess$classe
+training<-cbind(training, classe)
+mod_rf<-randomForest(classe~., data=training)
+mod_rf$confusion
+```
+
+This model has an in-sample error rate of 0.31%.
+
+We next cross-validate by running our model on our 'test' set.  This is followed by a confusion matrix which shows how many samples it correctly predicted.
+
+```{r}
+prediction<-predict(mod_rf, testing)
+confusionMatrix(prediction, reference = testing$classe)$table
+```
+Our model correctly predicts all but 25 samples. The out-of-sample error rate of this model is 0.32%.
+
+[^1]: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
